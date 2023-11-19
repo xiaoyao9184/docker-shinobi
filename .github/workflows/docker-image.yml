@@ -37,13 +37,12 @@ jobs:
           - BASE_IMAGE: nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
             platform: linux/amd64
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          github-server-url: https://gitlab.com
-          repository: Shinobi-Systems/Shinobi
-          ref: ${{ github.event.inputs.commit_id }}
+    steps:  
+      - name: Clone
+        run: |
+          git clone https://gitlab.com/Shinobi-Systems/Shinobi.git Shinobi
+          cd Shinobi
+          git checkout ${{ github.event.inputs.commit_id }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -60,7 +59,7 @@ jobs:
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./Shinobi
           build-args: |
             EXCLUDE_DB=${{ matrix.EXCLUDE_DB }}
             BASE_IMAGE=${{ matrix.BASE_IMAGE }}
