@@ -16,15 +16,51 @@ After reviewing the following items
 - [silvertoken/shinobi](https://github.com/silvertoken/shinobi)
 - [diegosc78/docker-shinobi-arm64](https://github.com/diegosc78/docker-shinobi-arm64)
 
-Will use github action to build and docker hub to publish the image,
+This project will use github action and docker hub build and publish images,
 and try to keep it as clean without custom configuration file.
 
 # Tags
 
-The images of this project will be published to docker [hub](https://hub.docker.com/r/xiaoyao9184/shinobi).
+The images of this project will be published to docker hub [xiaoyao9184/docker-shinobi](https://hub.docker.com/r/xiaoyao9184/docker-shinobi).
 
-Since there is no really version number, and each commit cannot be mirrored
-it would be a good idea to manually trigger the action and tag it with commit id.
+Since there is no really version number, and cannot create a image for each commit,
+so an good idea use manually trigger the action and tag it with commit id.
+See [this](https://damienaicheh.github.io/github/actions/2022/01/20/set-dynamic-parameters-github-workflows-en.html) article for more details.
+
+Default image name format is `${DOCKER_USERNAME}/${image_name}`,
+the `image_name` filled in when you manually trigger the action.
+
+Default image tag format is `${BRANCH_PREFIX}${ARCH_TYPE}${NO_DB_SUFIX}`, 
+Very similar with [official](https://gitlab.com/Shinobi-Systems/Shinobi/-/blob/0aef86bdf443381250eda82567ba56940fd1d99b/.gitlab-ci.yml#L13-L10).
+`BRANCH_PREFIX` same as `commit_id` filled in when you manually trigger the action,
+`ARCH_TYPE` only allowed `-amd64` or `-nvidia` or `-arm32v7` or `-arm64v8`,
+`NO_DB_SUFIX` only allowed `-no-db` or ``,
+
+like this, each tag only support one platform:
+
+| Tag | Platforms |
+| ----- | ----- |
+| dev-amd64 | linux/amd64 |
+| dev-amd64-no-db | linux/amd64 |
+| dev-arm32v7 | linux/arm/v7 |
+| dev-arm32v7-no-db | linux/arm/v7 |
+| dev-arm64v8 | linux/arm64 |
+| dev-arm64v8-no-db | linux/arm64 |
+| dev-nvidia | linux/amd64 |
+| dev-nvidia-no-db | linux/amd64 |
+
+Two special tags merge multiple platforms:
+
+| Tag | Sameas | Platforms |
+| ----- | ----- | ----- |
+| dev   | dev-amd64 | linux/amd64 |
+| | dev-arm32v7 | linux/arm/v7 |
+| | dev-arm64v8 | linux/arm64 |
+| dev-no-db   | dev-amd64-no-db | linux/amd64 |
+| | dev-arm32v7-no-db | linux/arm/v7 |
+| | dev-arm64v8-no-db | linux/arm64 |
 
 If you want to fixed version and this project does not provide,
 you can fork this project and build it your own image.
+You need to set two repository variables,
+`DOCKER_USERNAME` and `DOCKER_TOKEN`. see [this](https://github.com/docker/login-action#docker-hub)
