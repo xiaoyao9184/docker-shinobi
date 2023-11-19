@@ -41,7 +41,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: https://gitlab.com/Shinobi-Systems/Shinobi.git
+          github-server-url: https://gitlab.com
+          repository: Shinobi-Systems/Shinobi
           ref: ${{ github.event.inputs.commit_id }}
 
       - name: Set up QEMU
