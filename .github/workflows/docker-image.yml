@@ -97,7 +97,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./Shinobi
           build-args: |
             EXCLUDE_DB=${{ matrix.EXCLUDE_DB }}
             BASE_IMAGE=${{ matrix.BASE_IMAGE }}
