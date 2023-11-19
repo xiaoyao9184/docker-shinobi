@@ -94,6 +94,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push by digest
+        if: matrix.merge == true
         id: build
         uses: docker/build-push-action@v5
         with:
@@ -105,12 +106,14 @@ jobs:
           outputs: type=image,name=${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
+        if: matrix.merge == true
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
        
       - name: Upload digest
+        if: matrix.merge == true
         uses: actions/upload-artifact@v3
         with:
           name: digests
@@ -118,6 +121,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # see https://docs.docker.com/build/ci/github-actions/multi-platform/
   merge_push:
     runs-on: ubuntu-latest
 
