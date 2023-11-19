@@ -47,9 +47,9 @@ jobs:
             platform: linux/amd64
             merge: false
           - EXCLUDE_DB: 'true'
-            NO_DB_SUFIX: ''
+            NO_DB_SUFIX: '-no-db'
           - EXCLUDE_DB: 'false'
-            NO_DB_SUFIX: -no-db
+            NO_DB_SUFIX: 
 
     steps:
       - name: Clone
