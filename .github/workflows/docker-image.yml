@@ -19,6 +19,8 @@ jobs:
 
     strategy:
       matrix:
+        BRANCH_PREFIX:
+          - ${{ github.event.inputs.commit_id }}
         EXCLUDE_DB:
           - 'true'
           - 'false'
@@ -29,24 +31,32 @@ jobs:
           - nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
         include:
           - BASE_IMAGE: node:18-buster-slim
+            ARCH_TYPE: ''
+            arch_optional: ''
             platform: linux/amd64
           - BASE_IMAGE: arm32v7/node:18-buster-slim
+            ARCH_TYPE: arm32v7
+            arch_optional: ''
             platform: linux/arm/v7
           - BASE_IMAGE: arm64v8/node:18-buster-slim
+            ARCH_TYPE: arm64v8
+            arch_optional: ''
             platform: linux/arm64
           - BASE_IMAGE: nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+            ARCH_TYPE: nvidia
+            arch_optional: -nvidia
             platform: linux/amd64
           - EXCLUDE_DB: 'true'
             NO_DB_SUFIX: ''
           - EXCLUDE_DB: 'false'
             NO_DB_SUFIX: -no-db
 
-    steps:  
+    steps:
       - name: Clone
         run: |
           git clone https://gitlab.com/Shinobi-Systems/Shinobi.git Shinobi
           cd Shinobi
-          git checkout ${{ github.event.inputs.commit_id }}
+          git checkout ${{ matrix.BRANCH_PREFIX }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -69,4 +79,6 @@ jobs:
             BASE_IMAGE=${{ matrix.BASE_IMAGE }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}:${{ github.event.inputs.commit_id }}${{ matrix.NO_DB_SUFIX }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}:${{ matrix.BRANCH_PREFIX }}-${{ matrix.ARCH_TYPE }}${{ matrix.NO_DB_SUFIX }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}:${{ matrix.BRANCH_PREFIX }}${{ matrix.arch_optional }}${{ matrix.NO_DB_SUFIX }}
