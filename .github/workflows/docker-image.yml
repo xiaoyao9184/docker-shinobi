@@ -108,9 +108,9 @@ jobs:
       - name: Export digest
         if: matrix.merge == true
         run: |
-          mkdir -p /tmp/digests
+          mkdir -p /tmp/digests/${{ matrix.BRANCH_PREFIX }}${{ matrix.NO_DB_SUFIX }}
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/${{ matrix.BRANCH_PREFIX }}${{ matrix.NO_DB_SUFIX }}/${digest#sha256:}"
        
       - name: Upload digest
         if: matrix.merge == true
@@ -128,6 +128,14 @@ jobs:
     needs:
       - build_push
 
+    strategy:
+      matrix:
+        BRANCH_PREFIX:
+          - ${{ github.event.inputs.commit_id }}
+        NO_DB_SUFIX:
+          - ''
+          - -no-db
+
     steps:
       - name: Download digests
         uses: actions/download-artifact@v3
@@ -144,9 +152,10 @@ jobs:
         with:
           images: ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}
           tags:  |
-            type=raw,value=${{ github.event.inputs.commit_id }}
+            type=raw,value=${{ matrix.BRANCH_PREFIX }}
           flavor: |
             latest=false
+            suffix=${{ matrix.NO_DB_SUFIX }}
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -155,11 +164,11 @@ jobs:
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Create manifest list and push
-        working-directory: /tmp/digests
+        working-directory: /tmp/digests/${{ matrix.BRANCH_PREFIX }}${{ matrix.NO_DB_SUFIX }}
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}@sha256:%s ' *)          
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ secrets.DOCKER_USERNAME }}/${{ github.event.inputs.image_name }}:${{ matrix.BRANCH_PREFIX }}${{ matrix.NO_DB_SUFIX }}
