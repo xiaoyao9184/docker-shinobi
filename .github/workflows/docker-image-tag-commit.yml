@@ -1,0 +1,242 @@
+
+name: Docker Image Build/Publish tag with commit
+
+on:
+  push:
+    branches:
+      - 'master'
+    paths:
+      - Shinobi
+      - .github/workflows/docker-image-tag-commit.yml
+  workflow_dispatch:
+    inputs:
+      commit_id:
+        description: Shinobi commit id(like 'master' 'dev' '8f0dd984')
+        required: true
+        default: master
+      image_name:
+        description: Docker image name(without username)
+        required: true
+        default: shinobi
+  schedule:
+    - cron: '0 0 */7 * *'
+
+jobs:
+  build-and-push-docker-image:
+    name: Build Docker image and push to repositories
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    strategy:
+      matrix:
+        BRANCH_CHECKOUT:
+          - ${{ github.event.inputs.commit_id || 'master' }}
+        BASE_IMAGE:
+          - node:18-buster-slim
+          - arm32v7/node:18-buster-slim
+          - arm64v8/node:18-buster-slim
+          - nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+        EXCLUDE_DB:
+          - 'true'
+          - 'false'
+        include:
+          - BASE_IMAGE: node:18-buster-slim
+            suffix_arch_type: -amd64
+            platforms: linux/amd64
+            merge: true
+          - BASE_IMAGE: arm32v7/node:18-buster-slim
+            suffix_arch_type: -arm32v7
+            platforms: linux/arm/v7
+            merge: true
+          - BASE_IMAGE: arm64v8/node:18-buster-slim
+            suffix_arch_type: -arm64v8
+            platforms: linux/arm64
+            merge: true
+          - BASE_IMAGE: nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+            suffix_arch_type: -nvidia
+            platforms: linux/amd64
+            merge: false
+          - EXCLUDE_DB: 'true'
+            suffix_no_db: '-no-db'
+          - EXCLUDE_DB: 'false'
+            suffix_no_db:
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Checkout commit
+        run: |
+          cd Shinobi
+          git checkout ${{ matrix.BRANCH_CHECKOUT }}
+  
+      - name: Set env git short head
+        working-directory: ./Shinobi
+        run: echo "COMMIT_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta data image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name || 'shinobi' }}
+          tags: |
+            type=raw,value=${{ matrix.BRANCH_CHECKOUT }}
+            type=raw,value=${{ env.COMMIT_SHORT }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix_arch_type }}${{ matrix.suffix_no_db }}
+
+      - name: Build push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Shinobi
+          build-args: |
+            EXCLUDE_DB=${{ matrix.EXCLUDE_DB }}
+            BASE_IMAGE=${{ matrix.BASE_IMAGE }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Print image digest
+        run: echo ${{ steps.build.outputs.digest }}
+
+      # https://github.com/docker/build-push-action/discussions/1213#discussioncomment-10414120
+      # - name: Build and push by digest
+      #   if: matrix.merge == true
+      #   id: build_digest
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: ./Shinobi
+      #     build-args: |
+      #       EXCLUDE_DB=${{ matrix.EXCLUDE_DB }}
+      #       BASE_IMAGE=${{ matrix.BASE_IMAGE }}
+      #     platforms: ${{ matrix.platforms }}
+      #     outputs: |
+      #       type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }},push-by-digest=true,name-canonical=true,push=true
+      #       type=image,name=ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name || 'shinobi' }},push-by-digest=true,name-canonical=true,push=true
+      #     cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }}:${{ steps.build.outputs.digest }}
+
+      - name: Export digest
+        if: matrix.merge == true
+        run: |
+          mkdir -p /tmp/digests/${{ matrix.BRANCH_CHECKOUT }}${{ matrix.suffix_no_db }}
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${{ matrix.BRANCH_CHECKOUT }}${{ matrix.suffix_no_db }}/${digest#sha256:}"
+
+      - name: Upload digest
+        if: matrix.merge == true
+        uses: actions/upload-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+    outputs:
+      COMMIT_SHORT: ${{ env.COMMIT_SHORT }}
+
+  # see https://docs.docker.com/build/ci/github-actions/multi-platform/
+  merge-and-push-docker-image:
+    name: Merge Docker image and push to repositories
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    needs:
+      - build-and-push-docker-image
+
+    strategy:
+      matrix:
+        BRANCH_CHECKOUT:
+          - ${{ github.event.inputs.commit_id || 'master' }}
+        suffix_no_db:
+          - ''
+          - -no-db
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Checkout commit
+        run: |
+          cd Shinobi
+          git checkout ${{ matrix.BRANCH_CHECKOUT }}
+  
+      - name: Set env git short head
+        working-directory: ./Shinobi
+        run: echo "COMMIT_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+  
+      - name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta data image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name || 'shinobi' }}
+          tags: |
+            type=raw,value=${{ matrix.BRANCH_CHECKOUT }}
+            type=raw,value=${{ env.COMMIT_SHORT }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix_no_db }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests/${{ matrix.BRANCH_CHECKOUT }}${{ matrix.suffix_no_db }}
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name || 'shinobi' }}:${{ matrix.BRANCH_CHECKOUT }}${{ matrix.suffix_no_db }} \
+          && docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name || 'shinobi' }}:${{ matrix.BRANCH_CHECKOUT }}${{ matrix.suffix_no_db }}
