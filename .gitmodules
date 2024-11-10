@@ -1,0 +1,3 @@
+[submodule "Shinobi"]
+	path = Shinobi
+	url = https://gitlab.com/Shinobi-Systems/Shinobi.git
